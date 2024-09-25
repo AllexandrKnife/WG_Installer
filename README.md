@@ -23,7 +23,7 @@ This script automates the installation, configuration, and management of a WireG
 Run the script with root privileges:
 
 ```
-sudo python3 wg_installer.py
+sudo python3 WG_Installer.py
 ```
 
 The script will perform initial checks and then either install WireGuard or present a management menu if it's already installed.
