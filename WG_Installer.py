@@ -2,7 +2,6 @@ import os
 import subprocess
 import sys
 import random
-import re
 
 # Цветовая схема для вывода в терминал
 RED = '\033[0;31m'
