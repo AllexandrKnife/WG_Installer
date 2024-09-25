@@ -3,6 +3,7 @@ import subprocess
 import sys
 import random
 
+
 # Цветовая схема для вывода в терминал
 RED = '\033[0;31m'
 ORANGE = '\033[0;33m'
@@ -294,10 +295,13 @@ def show_menu():
         else:
             print(RED + "Неизвестный выбор. Пожалуйста, повторите попытку." + NC)
 
+user_config_path = None # /etc/wireguard/users/user_name.conf
 
 def add_user():
+    global user_config_path
+    user_config_path = None
     os.makedirs("/etc/wireguard/clients", exist_ok=True)
-    server_config_path = None
+    # server_config_path = None
     source_vars = get_config_vars()
 
     if not source_vars:
@@ -393,14 +397,14 @@ def get_highest_ip_octet():
     return highest_octet
 
 
-def extract_ip_address(config_path):
-    try:
-        with open(config_path, 'r') as f:
-            for line in f:
-                if line.startswith("Address ="):
-                    return line.split('=', 1)[1].strip().split('/')[0]
-    except Exception:
-        return None
+# def extract_ip_address(config_path):
+#    try:
+#        with open(config_path, 'r') as f:
+#            for line in f:
+#                if line.startswith("Address ="):
+#                    return line.split('=', 1)[1].strip().split('/')[0]
+#    except Exception:
+#        return None
 
 
 def get_config_vars():
@@ -567,3 +571,4 @@ def initial_check():
 if __name__ == "__main__":
     initial_check()
     install_wireguard()
+    
