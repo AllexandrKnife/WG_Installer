@@ -295,7 +295,9 @@ def show_menu():
         else:
             print(RED + "Неизвестный выбор. Пожалуйста, повторите попытку." + NC)
 
-user_config_path = None # /etc/wireguard/users/user_name.conf
+
+user_config_path = None   # /etc/wireguard/users/user_name.conf
+
 
 def add_user():
     global user_config_path
@@ -571,4 +573,3 @@ def initial_check():
 if __name__ == "__main__":
     initial_check()
     install_wireguard()
-    
