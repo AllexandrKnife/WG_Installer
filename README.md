@@ -32,7 +32,7 @@ The script will perform initial checks and then either install WireGuard or pres
 
 1. Add new user
 2. List all users
-3. Create QR code for a user
+3. Show QR code for a user
 4. Delete a user
 5. Restart WireGuard server
 6. Remove WireGuard server
@@ -41,9 +41,9 @@ The script will perform initial checks and then either install WireGuard or pres
 ## Key Functions
 
 - `install_wireguard()`: Installs and configures WireGuard
-- `add_user()`: Adds a new WireGuard client
+- `add_user()`: Adds a new WireGuard client and generates a QR code for a client's configuration
 - `list_users()`: Displays all configured clients
-- `regenerate_qr()`: Generates a QR code for a client's configuration
+- `regenerate_qr()`: Show a QR code for a client's configuration
 - `delete_user()`: Removes a client's configuration
 - `restart_wireguard()`: Restarts the WireGuard service
 - `remove_wireguard()`: Uninstalls WireGuard and removes all configurations
@@ -53,6 +53,7 @@ The script will perform initial checks and then either install WireGuard or pres
 - Server configuration: `/etc/wireguard/wg0.conf`
 - Client configurations: `/etc/wireguard/clients/<username>.conf`
 - WireGuard parameters: `/etc/wireguard/params`
+- QR codes: '/etc/wireguard/qrcodes/<username>_qrcode.png>'
 
 ## Notes
 
