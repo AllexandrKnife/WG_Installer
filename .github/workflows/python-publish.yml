@@ -1,23 +1,29 @@
-name: Python package
+name: Python application
 
-on: [push, pull_request]
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
 
 jobs:
-  build:
-
+  test:
     runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v2
-    - name: Set up Python
+
+    - name: Set up Python version
       uses: actions/setup-python@v2
       with:
-        python-version: '3.x'
+        python-version: '3.x'  # Укажите версию Python, которая вам необходима
+
     - name: Install dependencies
       run: |
-        #  python3 -m pip install --upgrade pip
-        pip3 install pytest
-        #  pip3 install -r requirements.txt
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
     - name: Run tests
       run: |
-        pytest
+        pip install unittest  # или pytest, если используете pytest
+        python -m unittest discover -s tests  # или pytest для запуска tests
