@@ -1,8 +1,8 @@
 import ipaddress
-import os
-import subprocess
-import sys
 import random
+import sys
+import subprocess
+import os
 
 # Цветовая схема для вывода в терминал
 RED = '\033[0;31m'
@@ -56,7 +56,7 @@ def check_os():
 
     except subprocess.CalledProcessError:
         print(
-            RED + "Ошибка получения информации о системе. Убедитесь, что команда lsb_release установлена и доступна." + NC)
+            RED + "Ошибка. Убедитесь, что команда lsb_release установлена и доступна." + NC)
         sys.exit(1)
 
 
@@ -85,7 +85,8 @@ def install_wireguard():
         print(GREEN + "WireGuard уже установлен. Пропускается этап установки." + NC)
         os.makedirs("/etc/wireguard/clients", exist_ok=True)
     else:
-        server_pub_ip, server_pub_nic, server_wg_nic, server_wg_ipv4, server_wg_ipv6, server_port, client_dns_1, client_dns_2, allowed_ips = install_questions()
+        server_pub_ip, server_pub_nic, server_wg_nic, server_wg_ipv4, server_wg_ipv6, \
+            server_port, client_dns_1, client_dns_2, allowed_ips = install_questions()
 
         os_info = subprocess.check_output(["lsb_release", "-si"]).decode().strip().lower()
         if os_info in ['ubuntu', 'debian']:
@@ -269,14 +270,17 @@ def install_questions():
 
     print(GREEN + "Отлично! Мы готовы настроить ваш сервер WireGuard." + NC)
 
-    return server_pub_ip, server_pub_nic, server_wg_nic, server_wg_ipv4, server_wg_ipv6, server_port, client_dns_1, client_dns_2, allowed_ips_input
+    return (
+        server_pub_ip, server_pub_nic, server_wg_nic, server_wg_ipv4, server_wg_ipv6,
+        server_port, client_dns_1, client_dns_2, allowed_ips_input
+    )
 
 
 def show_menu():
     while True:
         print("\nМеню:\n"
               "1. Добавить нового пользователя\n"
-              "2. Вывести список всех пользователей\n"
+              "2. Показать список пользователей\n"
               "3. Показать QR-код пользователя\n"
               "4. Удалить пользователя\n"
               "5. Перезагрузить сервер WireGuard\n"
@@ -310,7 +314,6 @@ user_config_path = None   # /etc/wireguard/users/user_name.conf
 def add_user():
     global user_config_path
     user_config_path = None
-    # qr_output_path = None
 
     os.makedirs("/etc/wireguard/clients", exist_ok=True)
     os.makedirs("/etc/wireguard/qrcodes", exist_ok=True)
@@ -326,6 +329,18 @@ def add_user():
 
     server_config_path = f"/etc/wireguard/{server_wg_nic}.conf"
 
+    # Проверка количества существующих пользователей
+    try:
+        with open(server_config_path, 'r') as f:
+            config_content = f.read()
+        current_client_count = config_content.count("#Client")
+        if current_client_count >= 256:
+            print(f"{RED}Достигнуто максимальное количество пользователей (256).{NC}")
+            return
+    except FileNotFoundError:
+        print(f"{RED}Файл конфигурации сервера не найден!{NC}")
+        return
+
     while True:
         username = input("Введите имя нового пользователя: ").strip()
 
@@ -340,19 +355,25 @@ def add_user():
             continue
 
         if is_user_in_server_config(username, server_config_path):
-            print(RED + "Пользователь с таким именем уже существует в конфигурации сервера. Пожалуйста, выберите другое имя." + NC)
+            print(RED + "Пользователь с таким именем уже есть. Пожалуйста, выберите другое имя." + NC)
             continue
 
         break
 
+    # Prompt if a pre-shared key should be used
+    use_psk = input("Использовать прешаред ключ? (y/n): ").strip().lower() == 'y'
+
     try:
         user_priv_key = subprocess.check_output("wg genkey", shell=True).decode().strip()
         user_pub_key = subprocess.check_output(f"echo {user_priv_key} | wg pubkey", shell=True).decode().strip()
+
+        user_psk = None
+        if use_psk:
+            user_psk = subprocess.check_output("wg genpsk", shell=True).decode().strip()
     except subprocess.CalledProcessError:
         print(RED + "Ошибка генерации ключей." + NC)
         return
 
-    # Получаем наибольший IP-адрес из существующих
     highest_ip_octet = get_highest_ip_octet()
     client_wg_ipv4 = f"{source_vars['SERVER_WG_IPV4'].rsplit('.', 1)[0]}.{highest_ip_octet + 1}"
 
@@ -367,13 +388,19 @@ PublicKey = {source_vars['SERVER_PUB_KEY']}
 Endpoint = {source_vars['SERVER_PUB_IP']}:{source_vars['SERVER_PORT']}
 AllowedIPs = {source_vars['ALLOWED_IPS']}
 """)
+        if use_psk:
+            f.write(f"PresharedKey = {user_psk}\n")
 
     try:
         with open(server_config_path, 'a') as f:
-            f.write(f"\n#Пользователь {username}\n"
+            f.write(f"\n#Client {username}\n"
                     "[Peer]\n"
                     f"PublicKey = {user_pub_key}\n"
                     f"AllowedIPs = {client_wg_ipv4}/32\n")
+            if use_psk:
+                f.write(f"PresharedKey = {user_psk}\n\n")
+            else:
+                f.write("\n\n\n")
         print(f"Successfully added {username} to the server configuration.")
     except Exception as e:
         print(f"Error adding user to server configuration: {e}")
@@ -390,11 +417,14 @@ AllowedIPs = {source_vars['ALLOWED_IPS']}
 
     # Создаёт QR-код для пользователя и сохраняет его
     try:
+        with open(user_config_path, 'r') as file:
+            input_data = file.read()
+
         # Вывод QR-кода на экран
-        subprocess.run(f"qrencode -t ansiutf8 < {user_config_path}", shell=True, check=True)
+        subprocess.run(["qrencode", "-t", "ansiutf8"], input=input_data.encode(), check=True)
 
         # Сохранение QR-кода в файл
-        subprocess.run(["qrencode", "-o", qr_output_path, "-t", "PNG", "-r", user_config_path], check=True)
+        subprocess.run(["qrencode", "-o", qr_output_path, "-t", "PNG"], input=input_data.encode(), check=True)
         print(f"QR-код сохранён в {qr_output_path}.")
     except subprocess.CalledProcessError:
         print(f"{RED}Ошибка генерации или сохранения QR-кода.{NC}")
@@ -436,7 +466,7 @@ def get_config_vars():
 def is_user_in_server_config(username, server_config_path):
     try:
         with open(server_config_path, 'r') as f:
-            return any(f"# Пользователь {username}" in line for line in f)
+            return any(f"#Client {username}" in line for line in f)
     except FileNotFoundError:
         print(f"{RED}Файл конфигурации {server_config_path} не найден.{NC}")
         return True  # Предполагаем, что файл будет, если не найден
@@ -449,30 +479,44 @@ def update_wg_config(server_wg_nic):
     os.remove(temp_config_file)
 
 
-def list_users():
-    users_dir = "/etc/wireguard/clients"
-    os.makedirs(users_dir, exist_ok=True)
-    users = os.listdir(users_dir)
-
-    print(GREEN + "Список пользователей WireGuard:" + NC)
-    for i, user in enumerate(users):
-        user_config_path = os.path.join(users_dir, user)
-        ip_address = extract_ip_address(user_config_path)
-        print(f"{i + 1}. {user} - {ip_address}")
-
-
 def extract_ip_address(config_path):
     try:
-        with open(config_path, 'r') as f:
-            for line in f:
+        with open(config_path, 'r') as file_object:
+            for line in file_object:
                 if line.startswith("Address ="):
                     # Предполагается формат 'Address = <IP>/24', извлекаем только IP
                     return line.split('=', 1)[1].strip().split('/')[0]
     except FileNotFoundError:
-        return "Конфигурация не найдена"
-    except Exception as e:
-        return f"Ошибка: {str(e)}"
-    return "IP-адрес не найден"
+        return None
+    except IsADirectoryError:
+        return None
+    except PermissionError:
+        return None
+    except (IndexError, ValueError):
+        return None
+
+    return None
+
+
+def list_users():
+    users_directory = "/etc/wireguard/clients"
+    os.makedirs(users_directory, exist_ok=True)
+    user_files = os.listdir(users_directory)
+
+    user_ip_list = []
+
+    for user_file in user_files:
+        config_path = os.path.join(users_directory, user_file)
+        ip = extract_ip_address(config_path)
+        if ip is not None:
+            user_ip_list.append((user_file, ip))
+
+    # Сортировка списка по IP-адресу
+    user_ip_list.sort(key=lambda user: ipaddress.ip_address(user[1]))
+
+    print(GREEN + "Список пользователей WireGuard:" + NC)
+    for index, (user_file, ip) in enumerate(user_ip_list):
+        print(f"{index + 1}. {user_file} - {ip}")
 
 
 def regenerate_qr():
@@ -481,9 +525,9 @@ def regenerate_qr():
         choice = int(input("Введите номер пользователя для пересоздания QR-кода: ")) - 1
         user_files = os.listdir("/etc/wireguard/clients/")
         if 0 <= choice < len(user_files):
-            user_config_path = f"/etc/wireguard/clients/{user_files[choice]}"
+            selected_user_config_path = f"/etc/wireguard/clients/{user_files[choice]}"
             print(f"QR-код для {user_files[choice]}:")
-            subprocess.run(f"qrencode -t ansiutf8 < {user_config_path}", shell=True, check=True)
+            subprocess.run(f"qrencode -t ansiutf8 < {selected_user_config_path}", shell=True, check=True)
         else:
             print(RED + "Некорректный выбор." + NC)
     except ValueError:
@@ -535,8 +579,8 @@ def get_server_wg_nic():
 
 def remove_user_from_wg(server_wg_nic, user_config_filename):
     server_config_path = f"/etc/wireguard/{server_wg_nic}.conf"
-    user_config_path = f"/etc/wireguard/clients/{user_config_filename}"
-    user_identifier = f"#Пользователь {os.path.splitext(user_config_filename)[0]}"
+    selected_user_config_path = f"/etc/wireguard/clients/{user_config_filename}"
+    user_identifier = f"#Client {os.path.splitext(user_config_filename)[0]}"
 
     try:
         # Чтение конфигурационного файла сервера
@@ -552,17 +596,17 @@ def remove_user_from_wg(server_wg_nic, user_config_filename):
                     continue
 
                 if line.strip() == user_identifier:
-                    skip_lines = 3  # Удаляем следующие три строки
+                    skip_lines = 4  # Удаляем следующие четыре строки
                     continue
 
                 f.write(line)
 
         # Удаление конфигурационного файла пользователя
-        if os.path.exists(user_config_path):
-            os.remove(user_config_path)
-            print(f"Конфигурационный файл {user_config_path} успешно удалён.")
+        if os.path.exists(selected_user_config_path):
+            os.remove(selected_user_config_path)
+            print(f"Конфигурационный файл {selected_user_config_path} успешно удалён.")
         else:
-            print(f"Конфигурационный файл {user_config_path} не найден.")
+            print(f"Конфигурационный файл {selected_user_config_path} не найден.")
 
     except FileNotFoundError:
         print("Файл конфигурации сервера не найден.")
