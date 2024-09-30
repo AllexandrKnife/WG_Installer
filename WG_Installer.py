@@ -84,28 +84,59 @@ def is_wireguard_installed():
     return False
 
 
+def is_package_installed(package_name):
+    """Checks if a package is installed on the system."""
+    try:
+        # Attempt to get package information using dpkg
+        subprocess.check_output(['dpkg', '-s', package_name], stderr=subprocess.STDOUT)
+        return True
+    except subprocess.CalledProcessError:
+        return False  # If an error occurs, the package is not installed
+
+
 def install_wireguard():
+    """Installs and configures WireGuard if it's not already installed."""
     if is_wireguard_installed():
-        print(GREEN + "\nWireGuard is already installed. Skipping installation step." + NC)
+        print(GREEN + "\nWireGuard is already installed. Skipping installation." + NC)
+        # Create a directory for storing client configurations, if it doesn't exist
         os.makedirs("/etc/wireguard/clients", exist_ok=True)
     else:
+        # Get setup parameters from the user or another function
         server_pub_ip, server_pub_nic, server_wg_nic, server_wg_ipv4, server_wg_ipv6, \
             server_port, client_dns_1, client_dns_2, allowed_ips = install_questions()
 
+        # Determine Linux distribution
         os_info = subprocess.check_output(["lsb_release", "-si"]).decode().strip().lower()
+
+        # Handling for Ubuntu and Debian
         if os_info in ['ubuntu', 'debian']:
-            os.system("apt update && apt install -y wireguard iptables resolvconf qrencode")
+            os.system("apt update")  # Update package list
+            packages = ["wireguard", "iptables", "resolvconf", "qrencode"]
+            for package in packages:
+                if not is_package_installed(package):
+                    # Install package if not installed
+                    os.system(f"apt install -y {package}")
+
+        # Handling for Fedora
         elif os_info == 'fedora':
             os.system("dnf install -y wireguard-tools iptables qrencode")
+
+        # Handling for CentOS, AlmaLinux, and Rocky
         elif os_info in ['centos', 'almalinux', 'rocky']:
             os.system("yum install -y epel-release elrepo-release && yum install -y wireguard-tools iptables")
+
+        # Handling for Arch Linux
         elif os_info == 'arch':
             os.system("pacman -S --needed --noconfirm wireguard-tools qrencode")
 
+        # Create a directory for storing client configurations
         os.makedirs("/etc/wireguard/clients", exist_ok=True)
+
+        # Generate server's private and public keys
         server_priv_key = subprocess.check_output("wg genkey", shell=True).decode().strip()
         server_pub_key = subprocess.check_output(f"echo {server_priv_key} | wg pubkey", shell=True).decode().strip()
 
+        # Save configuration parameters to a file
         with open("/etc/wireguard/params", "w") as f:
             f.write(f"""
 SERVER_PUB_IP={server_pub_ip}
@@ -121,6 +152,7 @@ CLIENT_DNS_2={client_dns_2}
 ALLOWED_IPS={allowed_ips}
 """)
 
+        # Create the main WireGuard configuration file
         with open(f"/etc/wireguard/{server_wg_nic}.conf", "w") as f:
             f.write(f"""
 [Interface]
@@ -128,7 +160,7 @@ Address = {server_wg_ipv4}/24,{server_wg_ipv6}/64
 ListenPort = {server_port}
 PrivateKey = {server_priv_key}
 
-# iptables setup
+# Configure iptables to manage traffic
 PostUp = iptables -I INPUT -p udp --dport {server_port} -j ACCEPT
 PostUp = iptables -I FORWARD -i {server_pub_nic} -o {server_wg_nic} -j ACCEPT
 PostUp = iptables -I FORWARD -i {server_wg_nic} -j ACCEPT
@@ -139,11 +171,12 @@ PostDown = iptables -D FORWARD -i {server_wg_nic} -j ACCEPT
 PostDown = iptables -t nat -D POSTROUTING -o {server_pub_nic} -j MASQUERADE
 """)
 
+        # Start and enable WireGuard to run at boot
         os.system(f"systemctl start wg-quick@{server_wg_nic}")
         os.system(f"systemctl enable wg-quick@{server_wg_nic}")
-        print(GREEN + "WireGuard successfully installed." + NC)
+        print(GREEN + "WireGuard was successfully installed." + NC)
 
-    show_menu()
+    show_menu()  # Call the main menu of the program
 
 
 def is_valid_ip(ip: str) -> bool:
